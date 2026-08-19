@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Image, Dices, MicOff, Lightbulb, RefreshCw } from 'lucide-react';
+import { Image, Dices, MicOff, Lightbulb, RefreshCw, ListOrdered, Bomb } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import logoImg from './assets/logo.png';
+import SentenceBuilder from './components/SentenceBuilder';
+import TimeBomb from './components/TimeBomb';
 import './index.css';
 
 function App() {
@@ -15,7 +17,7 @@ function App() {
   const [ageGroupFilter, setAgeGroupFilter] = useState('Adults');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [newPrompt, setNewPrompt] = useState<{ file: File | null, question: string, situation: string, role: string, targetWord: string, tabooWords: string, productName: string, description: string, actionText: string, level: string, ageGroup: string, hint: string }>({ file: null, question: '', situation: '', role: '', targetWord: '', tabooWords: '', productName: '', description: '', actionText: '', level: 'B1', ageGroup: 'Adults', hint: '' });
+  const [newPrompt, setNewPrompt] = useState<{ file: File | null, question: string, situation: string, role: string, targetWord: string, tabooWords: string, productName: string, description: string, actionText: string, level: string, ageGroup: string, hint: string, topic: string, correctSentence: string, promptText: string, timeLimit: number }>({ file: null, question: '', situation: '', role: '', targetWord: '', tabooWords: '', productName: '', description: '', actionText: '', level: 'B1', ageGroup: 'Adults', hint: '', topic: '', correctSentence: '', promptText: '', timeLimit: 15 });
   const [roleplayPrompts, setRoleplayPrompts] = useState<any[]>([]);
   const [currentRoleplayIndex, setCurrentRoleplayIndex] = useState(0);
   const [tabooPrompts, setTabooPrompts] = useState<any[]>([]);
@@ -33,6 +35,10 @@ function App() {
   const [mistakes, setMistakes] = useState(0);
   const [showHint, setShowHint] = useState(false);
   const [letterHintsUsed, setLetterHintsUsed] = useState(0);
+  const [sentenceBuilderPrompts, setSentenceBuilderPrompts] = useState<any[]>([]);
+  const [currentSentenceBuilderIndex, setCurrentSentenceBuilderIndex] = useState(0);
+  const [timeBombPrompts, setTimeBombPrompts] = useState<any[]>([]);
+  const [currentTimeBombIndex, setCurrentTimeBombIndex] = useState(0);
 
   const [isClassListModalOpen, setIsClassListModalOpen] = useState(false);
   const [studentNames, setStudentNames] = useState('');
@@ -137,6 +143,18 @@ function App() {
       }
     } else {
       setGuessedLetters([]);
+    }
+  };
+
+  const handleNextSentenceBuilder = () => {
+    if (sentenceBuilderPrompts.length > 0) {
+      setCurrentSentenceBuilderIndex((prev) => (prev + 1) % sentenceBuilderPrompts.length);
+    }
+  };
+
+  const handleNextTimeBomb = () => {
+    if (timeBombPrompts.length > 0) {
+      setCurrentTimeBombIndex((prev) => (prev + 1) % timeBombPrompts.length);
     }
   };
 
@@ -273,6 +291,36 @@ function App() {
             setGuessedLetters([]);
           }
         }
+      } else if (activeTab === 'Sentence Builder') {
+        const { data, error } = await supabase.from('sentence_builder')
+          .select('*')
+          .eq('level', levelFilter)
+          .eq('age_group', ageGroupFilter);
+        if (error) {
+          console.error('Supabase fetch error (Sentence Builder):', error);
+        } else {
+          setSentenceBuilderPrompts(data || []);
+          if (data && data.length > 0) {
+            setCurrentSentenceBuilderIndex(Math.floor(Math.random() * data.length));
+          } else {
+            setCurrentSentenceBuilderIndex(0);
+          }
+        }
+      } else if (activeTab === 'Time Bomb') {
+        const { data, error } = await supabase.from('time_bomb')
+          .select('*')
+          .eq('level', levelFilter)
+          .eq('age_group', ageGroupFilter);
+        if (error) {
+          console.error('Supabase fetch error (Time Bomb):', error);
+        } else {
+          setTimeBombPrompts(data || []);
+          if (data && data.length > 0) {
+            setCurrentTimeBombIndex(Math.floor(Math.random() * data.length));
+          } else {
+            setCurrentTimeBombIndex(0);
+          }
+        }
       }
     } catch (err) {
       console.error('Unexpected error during Supabase fetch:', err);
@@ -280,7 +328,7 @@ function App() {
   };
 
   useEffect(() => {
-    if (activeTab === 'Visual Prompts' || activeTab === 'Role-Play Roulette' || activeTab === 'Taboo Generator' || activeTab === 'Pitch Perfect' || activeTab === 'Action Wheel' || activeTab === 'Hangman') {
+    if (activeTab === 'Visual Prompts' || activeTab === 'Role-Play Roulette' || activeTab === 'Taboo Generator' || activeTab === 'Pitch Perfect' || activeTab === 'Action Wheel' || activeTab === 'Hangman' || activeTab === 'Sentence Builder' || activeTab === 'Time Bomb') {
       fetchPrompts();
     }
   }, [activeTab, levelFilter, ageGroupFilter]);
@@ -390,10 +438,60 @@ function App() {
           setIsUploading(false);
           return;
         }
+      } else if (activeTab === 'Sentence Builder') {
+        if (!newPrompt.correctSentence.trim()) {
+          alert('Please enter a correct sentence.');
+          setIsUploading(false);
+          return;
+        }
+
+        const words = newPrompt.correctSentence.trim().split(/\s+/);
+        // Fisher-Yates shuffle
+        const scrambledWords = [...words];
+        for (let i = scrambledWords.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [scrambledWords[i], scrambledWords[j]] = [scrambledWords[j], scrambledWords[i]];
+        }
+
+        const { error } = await supabase.from('sentence_builder').insert([{
+          topic: newPrompt.topic.trim(),
+          correct_sentence: newPrompt.correctSentence.trim(),
+          scrambled_words: scrambledWords,
+          level: newPrompt.level,
+          age_group: newPrompt.ageGroup
+        }]);
+        
+        if (error) {
+          console.error("Supabase insert error (Sentence Builder):", error);
+          alert('Failed to save the prompt. Please try again.');
+          setIsUploading(false);
+          return;
+        }
+      } else if (activeTab === 'Time Bomb') {
+        if (!newPrompt.promptText.trim()) {
+          alert('Please enter a prompt text.');
+          setIsUploading(false);
+          return;
+        }
+
+        const { error } = await supabase.from('time_bomb').insert([{
+          topic: newPrompt.topic.trim() || null,
+          prompt_text: newPrompt.promptText.trim(),
+          time_limit: newPrompt.timeLimit || 15,
+          level: newPrompt.level,
+          age_group: newPrompt.ageGroup
+        }]);
+        
+        if (error) {
+          console.error("Supabase insert error (Time Bomb):", error);
+          alert('Failed to save the prompt. Please try again.');
+          setIsUploading(false);
+          return;
+        }
       }
       
       setIsModalOpen(false);
-      setNewPrompt({ file: null, question: '', situation: '', role: '', targetWord: '', tabooWords: '', productName: '', description: '', actionText: '', level: 'B1', ageGroup: 'Adults', hint: '' });
+      setNewPrompt({ file: null, question: '', situation: '', role: '', targetWord: '', tabooWords: '', productName: '', description: '', actionText: '', level: 'B1', ageGroup: 'Adults', hint: '', topic: '', correctSentence: '', promptText: '', timeLimit: 15 });
       fetchPrompts();
     } catch (err) {
       console.error("Unexpected error saving prompt:", err);
@@ -465,6 +563,28 @@ function App() {
             setCurrentActionIndex(Math.floor(Math.random() * newActions.length));
           }
         }
+      } else if (table === 'sentence_builder') {
+        const newSentenceBuilders = sentenceBuilderPrompts.filter(p => p.id !== id);
+        setSentenceBuilderPrompts(newSentenceBuilders);
+        
+        if (newSentenceBuilders.length === 0) {
+          setCurrentSentenceBuilderIndex(0);
+        } else {
+          if (currentSentenceBuilderIndex >= newSentenceBuilders.length) {
+            setCurrentSentenceBuilderIndex(Math.floor(Math.random() * newSentenceBuilders.length));
+          }
+        }
+      } else if (table === 'time_bomb') {
+        const newTimeBombs = timeBombPrompts.filter(p => p.id !== id);
+        setTimeBombPrompts(newTimeBombs);
+        
+        if (newTimeBombs.length === 0) {
+          setCurrentTimeBombIndex(0);
+        } else {
+          if (currentTimeBombIndex >= newTimeBombs.length) {
+            setCurrentTimeBombIndex(Math.floor(Math.random() * newTimeBombs.length));
+          }
+        }
       }
     } catch (err) {
       console.error("Unexpected error deleting prompt:", err);
@@ -478,6 +598,8 @@ function App() {
     { name: 'Pitch Perfect', icon: <Lightbulb size={24} strokeWidth={2.5} color="#10B981" />, color: '#10B981' },
     { name: 'Action Wheel', icon: <RefreshCw size={24} strokeWidth={2.5} color="#8B5CF6" />, color: '#8B5CF6' },
     { name: 'Hangman', icon: <span style={{fontSize: '24px', lineHeight: 1}}>🔤</span>, color: '#EC4899' },
+    { name: 'Sentence Builder', icon: <ListOrdered size={24} strokeWidth={2.5} color="#F97316" />, color: '#F97316' },
+    { name: 'Time Bomb', icon: <Bomb size={24} strokeWidth={2.5} color="#EF4444" />, color: '#EF4444' },
   ];
 
   return (
@@ -1486,6 +1608,40 @@ function App() {
                 </div>
               )}
             </div>
+          ) : activeTab === 'Sentence Builder' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '2rem', height: '100%' }}>
+              {sentenceBuilderPrompts.length === 0 ? (
+                <div style={{ fontSize: '2rem', fontWeight: 'bold', padding: '3rem', color: 'var(--color-text-muted)' }}>
+                  0 SENTENCES FOUND
+                </div>
+              ) : (
+                <SentenceBuilder
+                  key={sentenceBuilderPrompts[currentSentenceBuilderIndex]?.id}
+                  id={sentenceBuilderPrompts[currentSentenceBuilderIndex]?.id}
+                  scrambledWords={sentenceBuilderPrompts[currentSentenceBuilderIndex]?.scrambled_words}
+                  correctSentence={sentenceBuilderPrompts[currentSentenceBuilderIndex]?.correct_sentence}
+                  onDelete={(id) => handleDelete(id, 'sentence_builder')}
+                  onNext={handleNextSentenceBuilder}
+                />
+              )}
+            </div>
+          ) : activeTab === 'Time Bomb' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '2rem', height: '100%' }}>
+              {timeBombPrompts.length === 0 ? (
+                <div style={{ fontSize: '2rem', fontWeight: 'bold', padding: '3rem', color: 'var(--color-text-muted)' }}>
+                  0 TIME BOMBS FOUND
+                </div>
+              ) : (
+                <TimeBomb
+                  key={timeBombPrompts[currentTimeBombIndex]?.id}
+                  id={timeBombPrompts[currentTimeBombIndex]?.id}
+                  promptText={timeBombPrompts[currentTimeBombIndex]?.prompt_text}
+                  timeLimit={timeBombPrompts[currentTimeBombIndex]?.time_limit}
+                  onDelete={(id) => handleDelete(id, 'time_bomb')}
+                  onNext={handleNextTimeBomb}
+                />
+              )}
+            </div>
           ) : (
             <div className="premium-card" style={{ padding: '3rem', textAlign: 'center', minWidth: '400px' }}>
               <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'center' }}>
@@ -1645,6 +1801,62 @@ function App() {
                     onChange={e => setNewPrompt({...newPrompt, hint: e.target.value})}
                     style={inputStyle}
                     placeholder="Enter an optional hint or definition..."
+                  />
+                </div>
+              </>
+            ) : activeTab === 'Sentence Builder' ? (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)' }}>Topic (Optional)</label>
+                  <input 
+                    type="text" 
+                    value={newPrompt.topic}
+                    onChange={e => setNewPrompt({...newPrompt, topic: e.target.value})}
+                    style={inputStyle}
+                    placeholder="e.g. Past Tense"
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)' }}>Correct Sentence</label>
+                  <input 
+                    type="text" 
+                    value={newPrompt.correctSentence}
+                    onChange={e => setNewPrompt({...newPrompt, correctSentence: e.target.value})}
+                    style={inputStyle}
+                    placeholder="e.g. I went to the cinema yesterday"
+                  />
+                </div>
+              </>
+            ) : activeTab === 'Time Bomb' ? (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)' }}>Topic (Optional)</label>
+                  <input 
+                    type="text" 
+                    value={newPrompt.topic}
+                    onChange={e => setNewPrompt({...newPrompt, topic: e.target.value})}
+                    style={inputStyle}
+                    placeholder="e.g. Vocabulary"
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)' }}>Prompt Text / Challenge</label>
+                  <textarea 
+                    value={newPrompt.promptText}
+                    onChange={e => setNewPrompt({...newPrompt, promptText: e.target.value})}
+                    style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }}
+                    placeholder="e.g. Name 3 things you find in a kitchen"
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)' }}>Time Limit (Seconds)</label>
+                  <input 
+                    type="number"
+                    min="5"
+                    max="120"
+                    value={newPrompt.timeLimit}
+                    onChange={e => setNewPrompt({...newPrompt, timeLimit: parseInt(e.target.value) || 15})}
+                    style={inputStyle}
                   />
                 </div>
               </>
