@@ -1,119 +1,94 @@
-import { useState, useEffect } from 'react';
-import { Trash2, Bomb, Play, Pause, RotateCcw, Flame, SkipForward } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { Trash2 } from 'lucide-react';
 
-export default function TimeBomb({
-  id,
-  promptText = "NAME 3 ANIMALS YOU CAN KEEP AS PETS AT HOME",
-  timeLimit = 10,
-  onDelete,
-  onNext
-}: any) {
-  const [timeLeft, setTimeLeft] = useState(timeLimit);
-  const [isRunning, setIsRunning] = useState(false);
-  const [hasExploded, setHasExploded] = useState(false);
+interface Props { levelFilter: string; ageGroupFilter: string; refreshTrigger: number; }
 
-  useEffect(() => {
-    setTimeLeft(timeLimit);
-    setIsRunning(false);
-    setHasExploded(false);
-  }, [promptText, timeLimit]);
+export default function TimeBomb({ levelFilter, ageGroupFilter, refreshTrigger }: Props) {
+  const [prompts, setPrompts] = useState<any[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [isActive, setIsActive] = useState(false);
 
-  useEffect(() => {
-    let timer: any;
-    if (isRunning && timeLeft > 0) {
-      timer = setInterval(() => setTimeLeft((prev: number) => prev - 1), 1000);
-    } else if (timeLeft === 0 && isRunning) {
-      setHasExploded(true);
-      setIsRunning(false);
+  useEffect(() => { fetchData(); }, [levelFilter, ageGroupFilter, refreshTrigger]);
+
+  const fetchData = async () => {
+    let query = supabase.from('time_bomb').select('*');
+    if (levelFilter !== 'All') query = query.eq('level', levelFilter);
+    if (ageGroupFilter !== 'All') query = query.eq('age_group', ageGroupFilter);
+    
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (!error && data) {
+      setPrompts(data);
+      setCurrentIndex(0);
+      if (data.length > 0) setTimeLeft(data[0].time_limit || 30);
     }
-    return () => clearInterval(timer);
-  }, [isRunning, timeLeft]);
-
-  const toggleTimer = () => {
-    if (hasExploded) return;
-    setIsRunning(!isRunning);
   };
 
-  const resetTimer = () => {
-    setIsRunning(false);
-    setHasExploded(false);
-    setTimeLeft(timeLimit);
+  const handleDelete = async (id: number) => {
+    if (!confirm('Are you sure you want to delete this prompt?')) return;
+    const { error } = await supabase.from('time_bomb').delete().eq('id', id);
+    if (!error) fetchData();
   };
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isActive && timeLeft > 0) {
+      interval = setInterval(() => setTimeLeft(timeLeft - 1), 1000);
+    } else if (timeLeft === 0 && isActive) {
+      setIsActive(false);
+      // Play explosion sound effect here if you want
+    }
+    return () => clearInterval(interval);
+  }, [isActive, timeLeft]);
+
+  if (prompts.length === 0) {
+    return <div className="text-3xl font-bold p-12 text-slate-400 text-center">0 PROMPTS FOUND</div>;
+  }
+
+  const p = prompts[currentIndex];
+  
+  const handleNext = () => {
+    const nextIdx = (currentIndex + 1) % prompts.length;
+    setCurrentIndex(nextIdx);
+    setTimeLeft(prompts[nextIdx].time_limit || 30);
+    setIsActive(false);
+  }
 
   return (
-    <div className="flex flex-col items-center justify-center w-full h-full p-6">
+    <div className="flex flex-col items-center justify-center w-full">
+      <div className={`bg-white border border-slate-200 shadow-sm w-full max-w-[800px] flex flex-col items-center relative overflow-hidden p-10 mx-auto rounded-3xl transition-colors duration-500 ${timeLeft === 0 && !isActive ? 'bg-rose-50 border-rose-300' : ''}`}>
+        <button
+          onClick={() => handleDelete(p.id)}
+          className="absolute top-4 right-4 bg-red-50 text-red-500 hover:bg-red-100 p-3 rounded-xl transition-colors z-10 cursor-pointer border-none"
+        >
+          <Trash2 size={24} />
+        </button>
 
-      {/* L'Card L'kbira */}
-      <div className="bg-[#18181b] border-2 border-gray-800 rounded-[3rem] p-12 w-full max-w-6xl shadow-2xl relative flex flex-col mx-auto">
-
-        {/* L'Fou9: S-so2al w Trash */}
-        <div className="flex justify-between items-start gap-8 mb-12">
-          <h2 className="text-4xl md:text-5xl font-black text-white tracking-wide leading-tight uppercase flex-1">
-            {promptText}
-          </h2>
-          <button
-            onClick={() => onDelete?.(id)}
-            className="text-gray-500 hover:text-red-500 p-4 bg-[#27272a] hover:bg-red-500/20 rounded-2xl transition-all shrink-0"
-          >
-            <Trash2 size={36} />
-          </button>
+        <div className="w-full text-center mb-8">
+           <h2 className="text-5xl font-black text-slate-800 tracking-wide uppercase leading-tight">
+             {p.prompt_text}
+           </h2>
         </div>
 
-        {/* L'Wst: L'qenboula w L'weqt (Kbaaar bzaf) */}
-        <div className="flex flex-col items-center justify-center min-h-[350px] w-full bg-[#09090b] rounded-[2.5rem] border-4 border-gray-800 mb-12 shadow-inner p-10">
-          {hasExploded ? (
-            <div className="flex flex-col items-center animate-bounce">
-              <Flame size={140} className="text-red-500 mb-6 drop-shadow-[0_0_30px_rgba(239,68,68,0.8)]" />
-              <span className="text-8xl md:text-[9rem] font-black text-red-500 uppercase tracking-widest drop-shadow-[0_0_20px_rgba(239,68,68,0.8)]">BOOM!</span>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center gap-12 md:gap-20 w-full">
-              <Bomb
-                size={160}
-                className={`${isRunning ? 'text-yellow-400 animate-pulse drop-shadow-[0_0_30px_rgba(250,204,21,0.6)]' : 'text-gray-600'} transition-all duration-300`}
-              />
-              <span className={`text-[10rem] md:text-[14rem] font-black tabular-nums transition-colors duration-300 leading-none ${timeLeft <= 5 ? 'text-red-500 drop-shadow-[0_0_30px_rgba(239,68,68,0.8)]' : 'text-yellow-400 drop-shadow-[0_0_30px_rgba(250,204,21,0.6)]'}`}>
-                {timeLeft}
-              </span>
-            </div>
-          )}
+        <div className={`text-[120px] font-black tabular-nums leading-none mb-10 transition-colors ${timeLeft <= 5 ? 'text-rose-600 animate-pulse' : 'text-slate-800'}`}>
+           {timeLeft}s
         </div>
-
-        {/* L-t7t: L'Boutonat L'3imlaqa */}
-        <div className="flex flex-wrap items-center justify-between gap-6 border-t-2 border-gray-800 pt-10">
-
-          <button
-            onClick={resetTimer}
-            className="flex items-center gap-3 bg-[#27272a] hover:bg-gray-700 text-gray-300 px-8 py-5 rounded-2xl font-bold transition-all text-2xl shadow-md"
-          >
-            <RotateCcw size={32} /> Reset
-          </button>
-
-          <div className="flex gap-6 flex-wrap">
+        
+        <div className="flex gap-4">
             <button
-              onClick={toggleTimer}
-              disabled={hasExploded}
-              className={`flex items-center gap-4 px-12 py-5 rounded-2xl font-black transition-all text-3xl shadow-lg ${hasExploded
-                ? 'bg-gray-800 text-gray-600 cursor-not-allowed'
-                : isRunning
-                  ? 'bg-red-500 hover:bg-red-600 text-white'
-                  : 'bg-yellow-400 hover:bg-yellow-500 text-black shadow-[0_0_30px_rgba(250,204,21,0.4)]'
-                }`}
+              className={`border-none rounded-full py-4 px-12 text-2xl font-bold cursor-pointer shadow-md transition-all uppercase tracking-widest hover:-translate-y-1 hover:shadow-lg ${isActive ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'}`}
+              onClick={() => setIsActive(!isActive)}
             >
-              {isRunning ? <Pause size={36} /> : <Play size={36} className="ml-2" />}
-              {isRunning ? "PAUSE" : "START"}
+              {isActive ? 'PAUSE' : (timeLeft === 0 ? 'TIME UP!' : 'START TIMER')}
             </button>
-
             <button
-              onClick={onNext}
-              className="flex items-center gap-3 bg-blue-600 hover:bg-blue-500 text-white px-10 py-5 rounded-2xl font-black transition-all text-3xl shadow-[0_0_30px_rgba(37,99,235,0.5)]"
+              className="bg-[#FFD100] text-black border-none rounded-full py-4 px-12 text-2xl font-bold cursor-pointer shadow-md transition-all uppercase tracking-widest hover:-translate-y-1 hover:shadow-lg"
+              onClick={handleNext}
             >
-              NEXT BOMB <SkipForward size={36} />
+              NEXT PROMPT
             </button>
-          </div>
-
         </div>
-
       </div>
     </div>
   );
